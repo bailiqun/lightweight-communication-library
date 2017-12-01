@@ -1,0 +1,1 @@
+/home/robotics/catkin_ws/src/serial/serial_test/build/CMakeFiles/test.dir
