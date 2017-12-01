@@ -1,1 +1,3 @@
-/home/robotics/catkin_ws/src/serial/serial_test/build/CMakeFiles/test.dir
+/Users/bailiqun/Document/lightweight-communication-library/serial_test/build/CMakeFiles/rebuild_cache.dir
+/Users/bailiqun/Document/lightweight-communication-library/serial_test/build/CMakeFiles/edit_cache.dir
+/Users/bailiqun/Document/lightweight-communication-library/serial_test/build/CMakeFiles/test.dir

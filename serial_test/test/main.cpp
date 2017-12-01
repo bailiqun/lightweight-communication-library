@@ -79,7 +79,7 @@ void Callback(const std_msgs::String& msg)
 int main(int argc, char *argv[])
 {
 
-    NodeHandleSerial n;
+    NodeHandleTCP n;
     DummyClass cl;
 
     n.subscribe<std_msgs::String>(2,"rrr", &Callback);

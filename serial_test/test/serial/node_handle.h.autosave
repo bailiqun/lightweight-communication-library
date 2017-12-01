@@ -167,7 +167,6 @@ public:
         configured_ = false;
         }
 
-        //std::cout<<"Subscriber Size="<<subscribers.size()<<std::endl;
         while(true)
         {
             int data = hardware.read();

@@ -4,7 +4,7 @@
 #include "serial/node_handle.h"
 #include "driver.h"
 
-typedef serial::NodeHandle<HardwareSerial> NodeHandleSerial;
-typedef serial::NodeHandle<HardwareSerial> NodeHandleTCP;
+//typedef serial::NodeHandle<HardwareSerial> NodeHandleSerial;
+typedef serial::NodeHandle<HardwareTCPServer> NodeHandleTCP;
 
 #endif
