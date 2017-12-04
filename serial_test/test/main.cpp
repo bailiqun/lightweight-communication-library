@@ -82,8 +82,8 @@ int main(int argc, char *argv[])
     NodeHandleTCP n;
     DummyClass cl;
 
-    n.subscribe<std_msgs::String>(2,"rrr", &Callback);
-    n.subscribe<DummyMsg>(1,"rrr", &DummyClass::memberCallback, &cl);
+    n.subscribe<std_msgs::String>(2,"std_msgs::String", &Callback);
+    n.subscribe<DummyMsg>(1,"DummyMsg", &DummyClass::memberCallback, &cl);
 
     n.spinOnce();
     return 0;

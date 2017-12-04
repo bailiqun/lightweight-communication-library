@@ -87,12 +87,10 @@ namespace serial {
   const uint8_t SERIAL_MSG_TIMEOUT  = 20;   // 20 milliseconds to recieve all of message data
 
   /* Node Handle */
-  template<class Hardware,
-           int INPUT_SIZE=512,
-           int OUTPUT_SIZE=512>
+  template<class Hardware>
   class NodeHandle : public NodeHandleBase
   {
-    protected:
+  protected:
     Hardware hardware;
 
     /* time used for syncing */
@@ -101,8 +99,8 @@ namespace serial {
     /* used for computing current time */
     uint32_t sec_offset, nsec_offset;
 
-    uint8_t message_in[INPUT_SIZE];
-    uint8_t message_out[OUTPUT_SIZE];
+    std::vector<uint8_t> message_in;
+    std::vector<uint8_t> message_out;
 
     std::vector<Publisher*>   publishers;
     std::vector<Subscriber_*> subscribers;
@@ -110,17 +108,14 @@ namespace serial {
    /*
     * Setup Functions
     */
-public:
+    public:
     NodeHandle() : configured_(false)
     {
         hardware.open();
         publishers.clear();
         subscribers.clear();
-        for(unsigned int i=0; i< INPUT_SIZE; i++)
-            message_in[i] = 0;
-        for(unsigned int i=0; i< OUTPUT_SIZE; i++)
-            message_out[i] = 0;
-
+        message_in.clear();
+        message_out.clear();
     }
 
     ~NodeHandle()
@@ -136,13 +131,7 @@ public:
     }
 
     Hardware* getHardware(){
-    return &hardware;
-    }
-
-    /* Start serial, initialize buffers */
-    void initNode()
-    {
-        hardware.open();
+        return &hardware;
     }
 
 protected:
@@ -158,30 +147,92 @@ public:
    *  This function goes in your loop() function, it handles
    *  serial input and callbacks for subscribers.
    */
+    bool sum_check(uint8_t chk_byte)
+    {
+        uint32_t sum = 0;
+        for(int i=0;i<message_in.size()-1;i++)
+        {
+            sum += message_in[i];
+        }
+        if(uint8_t(sum%256) == chk_byte)
+            return true;
+        else
+            return false;
+    }
+
     virtual int spinOnce()
     {
 
+        uint8_t rc_flag = 0;
         /* restart if timed out */
         uint32_t c_time = hardware.time();
-        if( (c_time - last_sync_receive_time) > (SYNC_SECONDS*2200) ){
-        configured_ = false;
+        if( (c_time - last_sync_receive_time) > (SYNC_SECONDS*2200) )
+        {
+            configured_ = false;
         }
 
-        //std::cout<<"Subscriber Size="<<subscribers.size()<<std::endl;
         while(true)
         {
-            int data = hardware.read();
-            for(int i=0;i<subscribers.size();i++)
+            uint8_t data = 0;
+            hardware.read(&data);
+            if(data == 0xa5)
             {
-                //subscribers[i]->callback(hardware.buff);
+                rc_flag |= 0x80;
+                message_in.push_back(data);
             }
-            sleep(1);
+            else if (data == 0x5a)
+            {
+                if(rc_flag & 0x80)
+                {
+                    message_in.clear();
+                    rc_flag &= ~0x40;
+                }
+                else
+                {
+                    message_in.push_back(data);
+                }
+                rc_flag &= ~0x80;
+            }
+            else
+            {
+                message_in.push_back(data);
+                rc_flag &= (~0x80);
+                uint32_t size = 0;
+                uint32_t id = 0;
+                if(message_in.size() > 4)
+                {
+                    size = message_in[0]<<8 | message_in[1];
+                    id = message_in[2]<<8 | message_in[3];
+                }
+                if(message_in.size() == size)
+                {
+                    rc_flag |= 0x40;
+                    if(sum_check(message_in[message_in.size() - 1]))
+                    {
+                        for(int i=0; i<subscribers.size(); i++)
+                        {
+                            if(subscribers[i]->id == id)
+                            {
+                                print("[INFO] ID(%d), Topic(%s)",bold, green, id, subscribers[i]->topic);
+                                subscribers[i]->callback(message_in.data());
+                                message_in.clear();
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        print("Sum check error.", bold, red);
+                    }
+                }
+            }
         }
 
         /* occasionally sync time */
-        if( configured_ && ((c_time-last_sync_time) > (SYNC_SECONDS*500) )){
-        requestSyncTime();
-        last_sync_time = c_time;
+        if( configured_ && ((c_time-last_sync_time) > (SYNC_SECONDS*500) ))
+        {
+            requestSyncTime();
+            last_sync_time = c_time;
         }
         return 0;
     }
@@ -255,7 +306,6 @@ public:
                 return;
             }
           }
-
           serial::Subscriber<MsgT> *sub=
                   new serial::Subscriber<MsgT>(topic, callback);
           sub->id = id;
@@ -282,13 +332,13 @@ public:
           subscribers.push_back(static_cast<Subscriber_*>(sub));
       }
 
-      virtual int publish(int id, const Msg * msg)
+      virtual int publish(int id, const Msg* msg)
       {
         if(id >= 100 && !configured_)
           return 0;
 
         /* serialize message */
-        int l = msg->serialize(message_out+7);
+        int l = msg->serialize(message_out.data());
 
         /* setup the header */
         message_out[0] = 0xA5;
@@ -306,8 +356,8 @@ public:
         l += 7;
         message_out[l++] = 255 - (chk%256);
 
-        if( l <= OUTPUT_SIZE ){
-          hardware.write(message_out, l);
+        if( l <= 6 ){
+          //hardware.write(message_out, l);
           return l;
         }else{
           //log("Message from device dropped: message larger than buffer.");
@@ -317,8 +367,41 @@ public:
 
 
 /********************************************************************
- * Parameters
+ * Printing
  */
+      enum print_color
+      {
+          res = 30,
+          red = 31,
+          green = 32,
+          yellow = 33,
+          blue = 34,
+          magneta = 35,
+          cyan = 36,
+          white = 37
+      };
+      enum print_format_control
+      {
+          normal = 0,
+          bold = 1,
+          faint = 22,
+          underline = 4,
+          twinkle = 5,
+          reverse = 7
+      };
+      void print(char* format,
+                 print_format_control control,
+                 print_color fontcolor,
+                 ...)
+      {
+          char format_[100];
+          sprintf(format_,"\033[%d;%d;m%s\033[0m\r\n",control,fontcolor,format);
+          va_list vp;
+          va_start(vp, format_);
+          int result = vprintf(format_,vp);
+          va_end(vp);
+          fflush(stdout);
+      }
 };
 }
 

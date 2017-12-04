@@ -47,7 +47,7 @@ namespace serial
             topic = topic_name;
         }
 
-        virtual void callback(unsigned char* data)
+        virtual void callback(uint8_t* data)
         {
             msg.deserialize(data);
             (obj_->*cb_)(msg);

@@ -14,12 +14,6 @@
 #include <string.h>
 #include <vector>
 
-#include <boost/thread.hpp>
-#include <boost/bind.hpp>
-#include <boost/ref.hpp>
-#include <boost/function.hpp>
-#include <boost/timer.hpp>
-
 class TCPServer
 {
 private:
@@ -28,20 +22,18 @@ private:
         ok
     }state;
 
-    boost::thread* thread_spin;
-
     int init_state;
     int accept_state;
-    int BUFSIZE;
 
     int  fd;         //server socket file descri
     int  client_fd;  //client socket file descri
 
-    std::vector<char> data;
     int  read_len;
 
     struct sockaddr_in local_addr;
     struct sockaddr_in remote_addr;
+
+    bool close_;
 
     void Warn(const char* words)
     {
@@ -84,63 +76,10 @@ private:
         }
     }
 
-    void print_proto(const unsigned char* buff, int len)
-    {
-        if(len<0) return;
-        Info("Recv:");
-        for(int i=0;i<len;i++)
-        {
-           printf("0x%x ",(unsigned char)buff[i]);
-        }
-        fflush(stdout);
-    }
-
-    void put_into_data(char* input, int len)
-    {
-        data.clear();
-        for(int i=0; i<len; i++)
-        {
-            data.push_back(input[i]);
-        }
-    }
-
-    int spin()
-    {
-        read_len = 0;
-        unsigned char recv_buff[500];
-
-        while(true)
-        {
-            int len = read(client_fd, recv_buff, 500);
-            print_proto(recv_buff, len);
-            put_into_data((char*)recv_buff, len);
-
-            if(len == 0)
-            {
-                read_len = 0;
-                continue;
-            }
-            else if(len < 0)
-            {
-                read_len = 0;
-                Error("Connection may interrupt. Waiting connection.");
-                close(client_fd);
-                wait_client();
-                Info("Connected.");
-                continue;
-            }
-            read_len = len;
-        }
-    }
 
 public:
-    ~TCPServer()
-    {
-        thread_spin->timed_join(boost::posix_time::seconds(1));
-        delete thread_spin;
-    }
 
-    TCPServer(char* ip="127.0.0.1",int port=6000):BUFSIZE(50),init_state(error)
+    TCPServer(int port=6000):init_state(error),close_(false)
     {
         if(port < 0 )
         {
@@ -148,7 +87,7 @@ public:
             Info("Port is invalid, Use default port 6000.");
         }
 
-        while(init_state == error)
+        while(init_state == error && (!close_))
         {
             try
             {
@@ -160,7 +99,7 @@ public:
                  //服务器端网络地址结构体
                 memset(&local_addr,0,sizeof(local_addr)); //数据初始化--清零
                 local_addr.sin_family=AF_INET; //设置为IP通信
-                local_addr.sin_addr.s_addr=inet_addr(ip);//服务器IP地址
+                local_addr.sin_addr.s_addr=htons(INADDR_ANY);//服务器IP地址
                 local_addr.sin_port = htons(port); //服务器端口号
                 int bind_result = bind(fd, (struct sockaddr*) &local_addr, sizeof(struct sockaddr));
                 if(bind_result < 0){
@@ -178,11 +117,9 @@ public:
             }
         }
         Info("Binding success.Listen port.");
-        boost::function0<void> f1 = boost::bind(&TCPServer::spin, this);
-        thread_spin = new boost::thread(f1);
     }
 
-    int put(const char* str)
+    int send(const char* str)
     {
        int len = write(client_fd, str, strlen(str));
        if(len <= 0)
@@ -192,18 +129,19 @@ public:
        return 0;
     }
 
-    int get(std::vector<char>& vec)
+    int recv(uint8_t* data)
     {
-        int len = read_len;
+        int len = read(client_fd, data, 1);
         if(len <= 0)
         {
-           return 0;
+            Error("Connection may interrupt. Waiting connection.");
+            close(client_fd);
+            wait_client();
+            Info("Connected.");
         }
-        vec = data;
-        read_len = 0;
-        data.clear();
         return len;
     }
+
 };
 
 class Hardware
@@ -211,42 +149,48 @@ class Hardware
 public:
     virtual int open();
     virtual int close();
-    virtual int read();
-    virtual int write();
+    virtual int read(uint8_t* data);
+    virtual int write(uint8_t* data);
+    virtual int check();
 };
 
 class HardwareTCPServer
 {
   public:
-    HardwareTCPServer()
+    virtual ~HardwareTCPServer()
     {
-
+        delete tcp;
     }
 
     virtual int open()
     {
-        if(tcp) return 1;
-        tcp = new TCPServer("192.168.3.33", 6000);
+        if(!tcp)
+        {
+            return 1;
+        }
+        tcp = new TCPServer(6000);
         return 0;
     }
 
-    int read()
+    int read(uint8_t* data)
     {
         int size = 0;
-        size = tcp->get(data);
+        size = tcp->recv(data);
         return size;
     }
 
-    void write(unsigned char* data, int length)
+    int write(uint8_t* data)
     {
 
     }
 
-    unsigned long time(){return 0;}
+    unsigned long time()
+    {
+        return 0;
+    }
 
   protected:
     TCPServer* tcp;
-    std::vector<char> data;
 };
 
 
